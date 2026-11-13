@@ -1,0 +1,470 @@
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Runner Monitoring System</title>
+
+    <!-- MQTT -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            background: #f1f5f9;
+            padding: 25px;
+            color: #1e293b;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: auto;
+        }
+
+        header {
+            background: #0f172a;
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        header h1 {
+            margin-bottom: 10px;
+        }
+
+        .status {
+            margin-top: 12px;
+            font-size: 14px;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 18px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px #00000010;
+        }
+
+        .card h3 {
+            color: #64748b;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+
+        .value {
+            font-size: 30px;
+            font-weight: bold;
+            color: #2563eb;
+        }
+
+        .unit {
+            font-size: 15px;
+            color: #64748b;
+        }
+
+        .section {
+            background: white;
+            padding: 22px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .section h2 {
+            margin-bottom: 18px;
+        }
+
+        .charts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .chart-box {
+            min-width: 0;
+            height: 280px;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .control {
+            padding: 20px;
+            background: #f8fafc;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        button {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+
+        .on {
+            background: #16a34a;
+        }
+
+        .off {
+            background: #dc2626;
+        }
+
+        .warning {
+            color: #dc2626;
+            font-weight: bold;
+            margin-top: 15px;
+        }
+
+        footer {
+            text-align: center;
+            color: #64748b;
+            padding: 15px;
+        }
+
+        @media(max-width: 700px) {
+            .cards, .charts, .controls {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <header>
+        <h1>🏃 RUNNER MONITORING SYSTEM</h1>
+        <p>Hệ thống giám sát và cảnh báo người chạy sử dụng ESP32 và FreeRTOS</p>
+
+        <div class="status">
+            MQTT: <span id="mqttStatus">Đang kết nối...</span>
+        </div>
+    </header>
+
+    <!-- SENSOR DATA -->
+    <div class="cards">
+
+        <div class="card">
+            <h3>🌡️ NHIỆT ĐỘ</h3>
+            <div class="value">
+                <span id="temperature">--</span>
+                <span class="unit">°C</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>🌬️ ÁP SUẤT</h3>
+            <div class="value">
+                <span id="pressure">--</span>
+                <span class="unit">hPa</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>⛰️ ĐỘ CAO</h3>
+            <div class="value">
+                <span id="altitude">--</span>
+                <span class="unit">m</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- WARNING -->
+    <div class="section">
+        <h2>⚠️ TRẠNG THÁI CẢNH BÁO</h2>
+        <p id="warning">Hệ thống đang hoạt động bình thường.</p>
+    </div>
+
+    <!-- CHARTS -->
+    <div class="section">
+        <h2>📊 BIỂU ĐỒ GIÁM SÁT</h2>
+
+        <div class="charts">
+            <div class="chart-box">
+                <canvas id="temperatureChart"></canvas>
+            </div>
+
+            <div class="chart-box">
+                <canvas id="altitudeChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONTROL -->
+    <div class="section">
+        <h2>🎮 ĐIỀU KHIỂN THIẾT BỊ</h2>
+
+        <div class="controls">
+
+            <div class="control">
+                <h3>💡 LED CẢNH BÁO</h3>
+                <p id="ledState">Đang tắt</p>
+
+                <button id="ledButton" class="on"
+                    onclick="toggleLED()">
+                    BẬT LED
+                </button>
+            </div>
+
+            <div class="control">
+                <h3>🔔 CÒI CẢNH BÁO</h3>
+                <p id="buzzerState">Đang tắt</p>
+
+                <button id="buzzerButton" class="on"
+                    onclick="toggleBuzzer()">
+                    BẬT CÒI
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <footer>
+        ESP32 - FreeRTOS - BMP180 - MQTT
+        <br>
+        Runner Monitoring System
+    </footer>
+
+</div>
+
+<script>
+
+// ================= MQTT CONFIG =================
+
+const broker = "wss://broker.hivemq.com:8884/mqtt";
+
+const topicData = "runner/data";
+const topicLED = "runner/led/cmd";
+const topicBuzzer = "runner/buzzer/cmd";
+
+let ledState = false;
+let buzzerState = false;
+
+// Kết nối MQTT
+const client = mqtt.connect(broker, {
+    clientId: "Runner_Web_" +
+        Math.random().toString(16).substring(2, 10),
+    clean: true,
+    connectTimeout: 10000,
+    reconnectPeriod: 3000
+});
+
+// ================= MQTT EVENTS =================
+
+client.on("connect", function() {
+
+    document.getElementById("mqttStatus").innerText =
+        "Đã kết nối";
+
+    document.getElementById("mqttStatus").style.color =
+        "#22c55e";
+
+    client.subscribe(topicData);
+
+});
+
+client.on("reconnect", function() {
+    document.getElementById("mqttStatus").innerText =
+        "Đang kết nối lại...";
+});
+
+client.on("offline", function() {
+    document.getElementById("mqttStatus").innerText =
+        "Mất kết nối";
+});
+
+client.on("error", function(error) {
+    console.log("MQTT Error:", error);
+});
+
+// ================= CHART CONFIG =================
+
+const labels = [];
+
+const temperatureValues = [];
+const altitudeValues = [];
+
+const temperatureChart = new Chart(
+    document.getElementById("temperatureChart"),
+    {
+        type: "line",
+
+        data: {
+            labels: labels,
+
+            datasets: [{
+                label: "Nhiệt độ (°C)",
+                data: temperatureValues,
+                borderWidth: 2,
+                tension: 0.3
+            }]
+        },
+
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    }
+);
+
+const altitudeChart = new Chart(
+    document.getElementById("altitudeChart"),
+    {
+        type: "line",
+
+        data: {
+            labels: labels,
+
+            datasets: [{
+                label: "Độ cao (m)",
+                data: altitudeValues,
+                borderWidth: 2,
+                tension: 0.3
+            }]
+        },
+
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    }
+);
+
+// ================= RECEIVE DATA =================
+
+client.on("message", function(topic, message) {
+
+    if (topic === topicData) {
+
+        try {
+
+            const data = JSON.parse(message.toString());
+
+            const temperature = Number(data.temperature);
+            const pressure = Number(data.pressure);
+            const altitude = Number(data.altitude);
+
+            if (![temperature, pressure, altitude].every(Number.isFinite)) {
+                throw new Error("Dữ liệu cảm biến không hợp lệ");
+            }
+
+            document.getElementById("temperature").innerText =
+                temperature.toFixed(2);
+
+            document.getElementById("pressure").innerText =
+                pressure.toFixed(2);
+
+            document.getElementById("altitude").innerText =
+                altitude.toFixed(2);
+
+            // Update charts
+            const time = new Date().toLocaleTimeString();
+
+            labels.push(time);
+            temperatureValues.push(temperature);
+            altitudeValues.push(altitude);
+
+            // Giữ tối đa 20 điểm dữ liệu
+            if (labels.length > 20) {
+                labels.shift();
+                temperatureValues.shift();
+                altitudeValues.shift();
+            }
+
+            temperatureChart.update();
+            altitudeChart.update();
+
+            // Hiển thị cảnh báo nhiệt độ
+            const warning = document.getElementById("warning");
+
+            if (temperature > 35 || temperature < 15) {
+                warning.innerText =
+                    "⚠️ CẢNH BÁO: NHIỆT ĐỘ VƯỢT NGƯỠNG!";
+                warning.style.color = "#dc2626";
+            } else {
+                warning.innerText =
+                    "Hệ thống đang hoạt động bình thường.";
+                warning.style.color = "#16a34a";
+            }
+
+        } catch(error) {
+            console.log("Lỗi dữ liệu:", error);
+        }
+    }
+});
+
+// ================= LED CONTROL =================
+
+function toggleLED() {
+
+    if (!client.connected) {
+        alert("MQTT chưa kết nối!");
+        return;
+    }
+
+    ledState = !ledState;
+
+    client.publish(topicLED, ledState ? "1" : "0");
+
+    document.getElementById("ledState").innerText =
+        ledState ? "Đang bật" : "Đang tắt";
+
+    const button = document.getElementById("ledButton");
+
+    button.innerText = ledState ? "TẮT LED" : "BẬT LED";
+
+    button.className = ledState ? "off" : "on";
+}
+
+// ================= BUZZER CONTROL =================
+
+function toggleBuzzer() {
+
+    if (!client.connected) {
+        alert("MQTT chưa kết nối!");
+        return;
+    }
+
+    buzzerState = !buzzerState;
+
+    client.publish(topicBuzzer, buzzerState ? "1" : "0");
+
+    document.getElementById("buzzerState").innerText =
+        buzzerState ? "Đang bật" : "Đang tắt";
+
+    const button = document.getElementById("buzzerButton");
+
+    button.innerText = buzzerState ? "TẮT CÒI" : "BẬT CÒI";
+
+    button.className = buzzerState ? "off" : "on";
+}
+
+</script>
+
+</body>
+</html>
